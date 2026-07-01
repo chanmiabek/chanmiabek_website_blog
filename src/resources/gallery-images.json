@@ -1,0 +1,117 @@
+[
+  {
+    "src": "/images/novatech.png",
+    "alt": "Nova Tech website",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/codepath.jpg",
+    "alt": "Coding workshop",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/coding.jpg",
+    "alt": "Laptop coding session",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/codingprograms.jpg",
+    "alt": "Students using laptops",
+    "orientation": "vertical"
+  },
+  {
+    "src": "/images/mywork.jpg",
+    "alt": "Portfolio work on a laptop",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/digital.jpg",
+    "alt": "Digital training",
+    "orientation": "vertical"
+  },
+  {
+    "src": "/images/java.png",
+    "alt": "Java",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/mongo.png",
+    "alt": "MongoDB",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/boot.png",
+    "alt": "Bootstrap CSS",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/tailwind.png",
+    "alt": "Tailwind CSS",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/REST.png",
+    "alt": "RESTful APIs",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/python.png",
+    "alt": "Python",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/node.png",
+    "alt": "Node.js",
+    "orientation": "vertical"
+  },
+  {
+    "src": "/images/html.png",
+    "alt": "HTML",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/mysql.png",
+    "alt": "MySQL",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/aws.png",
+    "alt": "AWS Cloud",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/express.png",
+    "alt": "Express.js",
+    "orientation": "vertical"
+  },
+  {
+    "src": "/images/JavaScript.png",
+    "alt": "JavaScript",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/react.png",
+    "alt": "React JS",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/Royal Hotel.png",
+    "alt": "Royal hotel booking project",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/klp.png",
+    "alt": "KLP education project",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/EUR.png",
+    "alt": "Educate Us To Rise project",
+    "orientation": "horizontal"
+  },
+  {
+    "src": "/images/project4.png",
+    "alt": "Project screenshot",
+    "orientation": "horizontal"
+  }
+]
