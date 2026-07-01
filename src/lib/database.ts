@@ -55,9 +55,15 @@ type GalleryRow = GalleryImage & {
   sort_order: number;
 };
 
-const contentDirectories: Record<ContentType, string[]> = {
-  blog: ["src", "app", "blog", "posts"],
-  project: ["src", "app", "work", "projects"],
+const contentDirectories: Record<ContentType, string> = {
+  blog: path.join(/* turbopackIgnore: true */ process.cwd(), "src", "app", "blog", "posts"),
+  project: path.join(
+    /* turbopackIgnore: true */ process.cwd(),
+    "src",
+    "app",
+    "work",
+    "projects",
+  ),
 };
 
 const defaultTeam: TeamMember[] = [
@@ -152,7 +158,7 @@ function seedDatabase(db: Database.Database) {
 
     const seedContent = db.transaction(() => {
       (Object.keys(contentDirectories) as ContentType[]).forEach((type) => {
-        const directory = path.join(process.cwd(), ...contentDirectories[type]);
+        const directory = contentDirectories[type];
         if (!fs.existsSync(directory)) return;
 
         fs.readdirSync(directory)
@@ -188,7 +194,12 @@ function seedDatabase(db: Database.Database) {
   };
 
   if (galleryCount.count === 0) {
-    const galleryPath = path.join(process.cwd(), "src", "resources", "gallery-images.json");
+    const galleryPath = path.join(
+      /* turbopackIgnore: true */ process.cwd(),
+      "src",
+      "resources",
+      "gallery-images.json",
+    );
     if (!fs.existsSync(galleryPath)) return;
 
     const images = JSON.parse(fs.readFileSync(galleryPath, "utf-8")) as Partial<GalleryImage>[];

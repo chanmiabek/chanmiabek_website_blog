@@ -1,11 +1,17 @@
 import path from "path";
 
 export function getDatabasePath() {
-  return process.env.SQLITE_DATABASE_PATH || path.join(process.cwd(), "data", "content.sqlite");
+  return (
+    process.env.SQLITE_DATABASE_PATH ||
+    path.join(/* turbopackIgnore: true */ process.cwd(), "data", "content.sqlite")
+  );
 }
 
 export function getUploadDirectory() {
-  return process.env.UPLOAD_DIR || path.join(process.cwd(), "public", "images", "uploads");
+  return (
+    process.env.UPLOAD_DIR ||
+    path.join(/* turbopackIgnore: true */ process.cwd(), "public", "images", "uploads")
+  );
 }
 
 export function getUploadPublicPath(fileName: string) {
