@@ -72,7 +72,8 @@ const RouteGuard: React.FC<RouteGuardProps> = ({ children }) => {
       setIsAuthenticated(true);
       setError(undefined);
     } else {
-      setError("Incorrect password");
+      const result = (await response.json().catch(() => null)) as { message?: string } | null;
+      setError(result?.message || "Incorrect password");
     }
   };
 
