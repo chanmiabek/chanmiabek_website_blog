@@ -7,7 +7,7 @@ export async function GET() {
   try {
     return NextResponse.json({
       ok: true,
-      ...getDatabaseHealth(),
+      ...(await getDatabaseHealth()),
     });
   } catch (error) {
     return NextResponse.json(

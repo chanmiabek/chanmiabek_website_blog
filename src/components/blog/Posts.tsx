@@ -10,14 +10,14 @@ interface PostsProps {
   exclude?: string[];
 }
 
-export function Posts({
+export async function Posts({
   range,
   columns = "1",
   thumbnail = false,
   exclude = [],
   direction,
 }: PostsProps) {
-  let allBlogs = getPosts(["src", "app", "blog", "posts"]);
+  let allBlogs = await getPosts(["src", "app", "blog", "posts"]);
 
   // Exclude by slug (exact match)
   if (exclude.length) {

@@ -20,7 +20,7 @@ type Metadata = {
   link?: string;
 };
 
-export function getPosts(customPath = ["", "", "", ""]) {
+export async function getPosts(customPath = ["", "", "", ""]) {
   const normalizedPath = path.join(...customPath).replace(/\\/g, "/");
 
   if (normalizedPath.endsWith("src/app/blog/posts")) {

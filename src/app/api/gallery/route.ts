@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json({ images: getGalleryImages() });
+  return NextResponse.json({ images: await getGalleryImages() });
 }
 
 export async function PUT(request: NextRequest) {
@@ -41,5 +41,5 @@ export async function PUT(request: NextRequest) {
     return result;
   }, []);
 
-  return NextResponse.json({ images: replaceGalleryImages(cleanImages) });
+  return NextResponse.json({ images: await replaceGalleryImages(cleanImages) });
 }

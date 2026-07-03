@@ -1,8 +1,16 @@
 import fs from "fs";
 import path from "path";
-import Database from "better-sqlite3";
+import { Pool } from "pg";
+import { createClient, type Client } from "@libsql/client";
 import matter from "gray-matter";
-import { getDatabasePath } from "./server-paths";
+
+import { awsCredentialsProvider } from "@vercel/functions/oidc";
+import { attachDatabasePool } from "@vercel/functions";
+import { Signer } from "@aws-sdk/rds-signer";
+import process from "process";
+
+type PgPool = any;
+type ClientBase = any;
 
 export type ContentType = "blog" | "project";
 
@@ -37,24 +45,6 @@ export type GalleryImage = {
   orientation: "horizontal" | "vertical";
 };
 
-type ContentRow = {
-  slug: string;
-  title: string;
-  subtitle: string | null;
-  published_at: string;
-  summary: string;
-  image: string | null;
-  images: string;
-  tag: string | null;
-  team: string;
-  link: string | null;
-  content: string;
-};
-
-type GalleryRow = GalleryImage & {
-  sort_order: number;
-};
-
 const contentDirectories: Record<ContentType, string> = {
   blog: path.join(/* turbopackIgnore: true */ process.cwd(), "src", "app", "blog", "posts"),
   project: path.join(
@@ -75,42 +65,38 @@ const defaultTeam: TeamMember[] = [
   },
 ];
 
-let database: Database.Database | null = null;
+let client: Client | null = null;
+let initialized: Promise<void> | null = null;
+let pool: Pool | null = null;
 
-function getDatabase() {
-  if (database) return database;
-
-  const databasePath = getDatabasePath();
-  const databaseDirectory = path.dirname(databasePath);
-
-  fs.mkdirSync(databaseDirectory, { recursive: true });
-  database = new Database(databasePath);
-  database.pragma("journal_mode = WAL");
-  database.pragma("foreign_keys = ON");
-  migrate(database);
-  seedDatabase(database);
-
-  return database;
+function hasDatabaseConfig() {
+  return Boolean(process.env.TURSO_DATABASE_URL);
 }
 
-export function getDatabaseHealth() {
-  const db = getDatabase();
-  const content = db.prepare("SELECT COUNT(*) as count FROM content_entries").get() as {
-    count: number;
-  };
-  const gallery = db.prepare("SELECT COUNT(*) as count FROM gallery_images").get() as {
-    count: number;
-  };
-
-  return {
-    databasePath: getDatabasePath(),
-    contentEntries: content.count,
-    galleryImages: gallery.count,
-  };
+function getEnvVar(name: string) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is not set`);
+  }
+  return value;
 }
 
-function migrate(db: Database.Database) {
-  db.exec(`
+function getClient(): Client {
+  if (client) return client;
+
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
+
+  if (!url) {
+    throw new Error("TURSO_DATABASE_URL is not set");
+  }
+
+  client = createClient({ url, authToken });
+  return client;
+}
+
+async function migrate(db: Client) {
+  await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS content_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       type TEXT NOT NULL CHECK(type IN ('blog', 'project')),
@@ -142,89 +128,6 @@ function migrate(db: Database.Database) {
   `);
 }
 
-function seedDatabase(db: Database.Database) {
-  const contentCount = db.prepare("SELECT COUNT(*) as count FROM content_entries").get() as {
-    count: number;
-  };
-
-  if (contentCount.count === 0) {
-    const insert = db.prepare(`
-      INSERT INTO content_entries (
-        type, slug, title, subtitle, published_at, summary, image, images, tag, team, link, content
-      ) VALUES (
-        @type, @slug, @title, @subtitle, @publishedAt, @summary, @image, @images, @tag, @team, @link, @content
-      )
-    `);
-
-    const seedContent = db.transaction(() => {
-      (Object.keys(contentDirectories) as ContentType[]).forEach((type) => {
-        const directory = contentDirectories[type];
-        if (!fs.existsSync(directory)) return;
-
-        fs.readdirSync(directory)
-          .filter((file) => path.extname(file) === ".mdx")
-          .forEach((file) => {
-            const raw = fs.readFileSync(path.join(directory, file), "utf-8");
-            const parsed = matter(raw);
-            const data = buildMetadata(type, parsed.data);
-
-            insert.run({
-              type,
-              slug: path.basename(file, ".mdx"),
-              title: data.title,
-              subtitle: data.subtitle ?? null,
-              publishedAt: data.publishedAt,
-              summary: data.summary,
-              image: data.image ?? null,
-              images: JSON.stringify(data.images),
-              tag: data.tag ?? null,
-              team: JSON.stringify(data.team),
-              link: data.link ?? null,
-              content: parsed.content.trim(),
-            });
-          });
-      });
-    });
-
-    seedContent();
-  }
-
-  const galleryCount = db.prepare("SELECT COUNT(*) as count FROM gallery_images").get() as {
-    count: number;
-  };
-
-  if (galleryCount.count === 0) {
-    const galleryPath = path.join(
-      /* turbopackIgnore: true */ process.cwd(),
-      "src",
-      "resources",
-      "gallery-images.json",
-    );
-    if (!fs.existsSync(galleryPath)) return;
-
-    const images = JSON.parse(fs.readFileSync(galleryPath, "utf-8")) as Partial<GalleryImage>[];
-    const insert = db.prepare(`
-      INSERT INTO gallery_images (src, alt, orientation, sort_order)
-      VALUES (@src, @alt, @orientation, @sortOrder)
-    `);
-
-    const seedGallery = db.transaction(() => {
-      images.forEach((image, index) => {
-        if (typeof image.src !== "string" || !image.src.trim()) return;
-
-        insert.run({
-          src: image.src.trim(),
-          alt: typeof image.alt === "string" && image.alt.trim() ? image.alt.trim() : "Gallery image",
-          orientation: image.orientation === "vertical" ? "vertical" : "horizontal",
-          sortOrder: index,
-        });
-      });
-    });
-
-    seedGallery();
-  }
-}
-
 function buildMetadata(type: ContentType, data: Record<string, any>): ContentMetadata {
   const shared = {
     title: data.title || "",
@@ -253,9 +156,172 @@ function buildMetadata(type: ContentType, data: Record<string, any>): ContentMet
   };
 }
 
-function parseJson<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) return fallback;
+function getGallerySeedPath() {
+  return path.join(
+    /* turbopackIgnore: true */ process.cwd(),
+    "src",
+    "resources",
+    "gallery-images.json",
+  );
+}
 
+function getFileContentEntries(type: ContentType): ContentEntry[] {
+  const directory = contentDirectories[type];
+  if (!fs.existsSync(directory)) return [];
+
+  return fs
+    .readdirSync(directory)
+    .filter((file) => path.extname(file) === ".mdx")
+    .map((file) => {
+      const raw = fs.readFileSync(path.join(directory, file), "utf-8");
+      const parsed = matter(raw);
+
+      return {
+        slug: path.basename(file, ".mdx"),
+        metadata: buildMetadata(type, parsed.data),
+        content: parsed.content.trim(),
+      };
+    })
+    .sort((a, b) => {
+      return (
+        new Date(b.metadata.publishedAt).getTime() - new Date(a.metadata.publishedAt).getTime()
+      );
+    });
+}
+
+function getSeedGalleryImages(): GalleryImage[] {
+  const galleryPath = getGallerySeedPath();
+  if (!fs.existsSync(galleryPath)) return [];
+
+  const images = JSON.parse(fs.readFileSync(galleryPath, "utf-8")) as Partial<GalleryImage>[];
+
+  return images.reduce<GalleryImage[]>((result, image) => {
+    if (typeof image.src !== "string" || !image.src.trim()) {
+      return result;
+    }
+
+    result.push({
+      src: image.src.trim(),
+      alt: typeof image.alt === "string" && image.alt.trim() ? image.alt.trim() : "Gallery image",
+      orientation: image.orientation === "vertical" ? "vertical" : "horizontal",
+    });
+
+    return result;
+  }, []);
+}
+
+async function seedDatabase(db: Client) {
+  const contentCount = await db.execute("SELECT COUNT(*) as count FROM content_entries");
+  const existingContentCount = Number(contentCount.rows[0]?.count ?? 0);
+
+  if (existingContentCount === 0) {
+    const statements: Parameters<Client["batch"]>[0] = [];
+
+    (Object.keys(contentDirectories) as ContentType[]).forEach((type) => {
+      const directory = contentDirectories[type];
+      if (!fs.existsSync(directory)) return;
+
+      fs.readdirSync(directory)
+        .filter((file) => path.extname(file) === ".mdx")
+        .forEach((file) => {
+          const raw = fs.readFileSync(path.join(directory, file), "utf-8");
+          const parsed = matter(raw);
+          const data = buildMetadata(type, parsed.data);
+
+          statements.push({
+            sql: `
+              INSERT INTO content_entries (
+                type, slug, title, subtitle, published_at, summary, image, images, tag, team, link, content
+              ) VALUES (
+                @type, @slug, @title, @subtitle, @publishedAt, @summary, @image, @images, @tag, @team, @link, @content
+              )
+            `,
+            args: {
+              type,
+              slug: path.basename(file, ".mdx"),
+              title: data.title,
+              subtitle: data.subtitle ?? null,
+              publishedAt: data.publishedAt,
+              summary: data.summary,
+              image: data.image ?? null,
+              images: JSON.stringify(data.images),
+              tag: data.tag ?? null,
+              team: JSON.stringify(data.team),
+              link: data.link ?? null,
+              content: parsed.content.trim(),
+            },
+          });
+        });
+    });
+
+    if (statements.length > 0) {
+      await db.batch(statements, "write");
+    }
+  }
+
+  const galleryCount = await db.execute("SELECT COUNT(*) as count FROM gallery_images");
+  const existingGalleryCount = Number(galleryCount.rows[0]?.count ?? 0);
+
+  if (existingGalleryCount === 0) {
+    const galleryPath = getGallerySeedPath();
+    if (!fs.existsSync(galleryPath)) return;
+
+    const images = JSON.parse(fs.readFileSync(galleryPath, "utf-8")) as Partial<GalleryImage>[];
+    const statements = images
+      .filter((image): image is Partial<GalleryImage> & { src: string } => {
+        return typeof image.src === "string" && image.src.trim().length > 0;
+      })
+      .map((image, index) => ({
+        sql: `
+          INSERT INTO gallery_images (src, alt, orientation, sort_order)
+          VALUES (@src, @alt, @orientation, @sortOrder)
+        `,
+        args: {
+          src: image.src.trim(),
+          alt: typeof image.alt === "string" && image.alt.trim() ? image.alt.trim() : "Gallery image",
+          orientation: image.orientation === "vertical" ? "vertical" : "horizontal",
+          sortOrder: index,
+        },
+      }));
+
+    if (statements.length > 0) {
+      await db.batch(statements, "write");
+    }
+  }
+}
+
+async function ensureDatabase(): Promise<Client> {
+  const db = getClient();
+  if (!initialized) {
+    initialized = (async () => {
+      await migrate(db);
+      await seedDatabase(db);
+    })();
+  }
+  await initialized;
+  return db;
+}
+
+export async function getDatabaseHealth() {
+  if (!hasDatabaseConfig()) {
+    return {
+      contentEntries: getFileContentEntries("blog").length + getFileContentEntries("project").length,
+      galleryImages: getSeedGalleryImages().length,
+    };
+  }
+
+  const db = await ensureDatabase();
+  const content = await db.execute("SELECT COUNT(*) as count FROM content_entries");
+  const gallery = await db.execute("SELECT COUNT(*) as count FROM gallery_images");
+
+  return {
+    contentEntries: Number(content.rows[0]?.count ?? 0),
+    galleryImages: Number(gallery.rows[0]?.count ?? 0),
+  };
+}
+
+function parseJson<T>(value: unknown, fallback: T): T {
+  if (typeof value !== "string" || !value) return fallback;
   try {
     return JSON.parse(value) as T;
   } catch {
@@ -263,7 +329,7 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
-function rowToEntry(row: ContentRow): ContentEntry {
+function rowToEntry(row: any): ContentEntry {
   return {
     slug: row.slug,
     metadata: {
@@ -281,22 +347,26 @@ function rowToEntry(row: ContentRow): ContentEntry {
   };
 }
 
-export function getContentEntries(type: ContentType) {
-  const rows = getDatabase()
-    .prepare(
-      `
+export async function getContentEntries(type: ContentType) {
+  if (!hasDatabaseConfig()) {
+    return getFileContentEntries(type);
+  }
+
+  const db = await ensureDatabase();
+  const result = await db.execute({
+    sql: `
       SELECT slug, title, subtitle, published_at, summary, image, images, tag, team, link, content
       FROM content_entries
       WHERE type = ?
       ORDER BY date(published_at) DESC, updated_at DESC
     `,
-    )
-    .all(type) as ContentRow[];
+    args: [type],
+  });
 
-  return rows.map(rowToEntry);
+  return result.rows.map(rowToEntry);
 }
 
-export function saveContentEntry(
+export async function saveContentEntry(
   type: ContentType,
   slug: string,
   originalSlug: string,
@@ -304,10 +374,13 @@ export function saveContentEntry(
   content: string,
   mode: "create" | "update",
 ) {
-  const db = getDatabase();
-  const existing = db
-    .prepare("SELECT slug FROM content_entries WHERE type = ? AND slug = ?")
-    .get(type, slug);
+  const db = await ensureDatabase();
+
+  const existingResult = await db.execute({
+    sql: "SELECT slug FROM content_entries WHERE type = ? AND slug = ?",
+    args: [type, slug],
+  });
+  const existing = existingResult.rows.length > 0;
 
   if (mode === "create" && existing) {
     throw new Error("An entry with this slug already exists");
@@ -317,10 +390,25 @@ export function saveContentEntry(
     throw new Error("An entry with the new slug already exists");
   }
 
+  const args = {
+    type,
+    originalSlug,
+    slug,
+    title: metadata.title,
+    subtitle: metadata.subtitle ?? null,
+    publishedAt: metadata.publishedAt,
+    summary: metadata.summary,
+    image: metadata.image ?? null,
+    images: JSON.stringify(metadata.images),
+    tag: metadata.tag ?? null,
+    team: JSON.stringify(metadata.team),
+    link: metadata.link ?? null,
+    content,
+  };
+
   if (mode === "update") {
-    const result = db
-      .prepare(
-        `
+    const result = await db.execute({
+      sql: `
         UPDATE content_entries
         SET slug = @slug,
             title = @title,
@@ -336,92 +424,122 @@ export function saveContentEntry(
             updated_at = CURRENT_TIMESTAMP
         WHERE type = @type AND slug = @originalSlug
       `,
-      )
-      .run({
-        type,
-        originalSlug,
-        slug,
-        title: metadata.title,
-        subtitle: metadata.subtitle ?? null,
-        publishedAt: metadata.publishedAt,
-        summary: metadata.summary,
-        image: metadata.image ?? null,
-        images: JSON.stringify(metadata.images),
-        tag: metadata.tag ?? null,
-        team: JSON.stringify(metadata.team),
-        link: metadata.link ?? null,
-        content,
-      });
+      args,
+    });
 
-    if (result.changes === 0) {
+    if (result.rowsAffected === 0) {
       throw new Error("Entry not found");
     }
   } else {
-    db.prepare(
-      `
-      INSERT INTO content_entries (
-        type, slug, title, subtitle, published_at, summary, image, images, tag, team, link, content
-      ) VALUES (
-        @type, @slug, @title, @subtitle, @publishedAt, @summary, @image, @images, @tag, @team, @link, @content
-      )
-    `,
-    ).run({
-      type,
-      slug,
-      title: metadata.title,
-      subtitle: metadata.subtitle ?? null,
-      publishedAt: metadata.publishedAt,
-      summary: metadata.summary,
-      image: metadata.image ?? null,
-      images: JSON.stringify(metadata.images),
-      tag: metadata.tag ?? null,
-      team: JSON.stringify(metadata.team),
-      link: metadata.link ?? null,
-      content,
+    await db.execute({
+      sql: `
+        INSERT INTO content_entries (
+          type, slug, title, subtitle, published_at, summary, image, images, tag, team, link, content
+        ) VALUES (
+          @type, @slug, @title, @subtitle, @publishedAt, @summary, @image, @images, @tag, @team, @link, @content
+        )
+      `,
+      args,
     });
   }
 
-  return getContentEntries(type).find((entry) => entry.slug === slug);
+  const entries = await getContentEntries(type);
+  return entries.find((entry) => entry.slug === slug);
 }
 
-export function getGalleryImages(): GalleryImage[] {
-  const rows = getDatabase()
-    .prepare(
-      `
-      SELECT src, alt, orientation, sort_order
-      FROM gallery_images
-      ORDER BY sort_order ASC, id ASC
-    `,
-    )
-    .all() as GalleryRow[];
+export async function getGalleryImages(): Promise<GalleryImage[]> {
+  if (!hasDatabaseConfig()) {
+    return getSeedGalleryImages();
+  }
 
-  return rows.map((row) => ({
+  const db = await ensureDatabase();
+  const result = await db.execute(`
+    SELECT src, alt, orientation, sort_order
+    FROM gallery_images
+    ORDER BY sort_order ASC, id ASC
+  `);
+
+  return result.rows.map((row: any) => ({
     src: row.src,
     alt: row.alt,
     orientation: row.orientation === "vertical" ? "vertical" : "horizontal",
   }));
 }
 
-export function replaceGalleryImages(images: GalleryImage[]) {
-  const db = getDatabase();
-  const replace = db.transaction(() => {
-    db.prepare("DELETE FROM gallery_images").run();
+export async function replaceGalleryImages(images: GalleryImage[]) {
+  const db = await ensureDatabase();
 
-    const insert = db.prepare(`
-      INSERT INTO gallery_images (src, alt, orientation, sort_order)
-      VALUES (@src, @alt, @orientation, @sortOrder)
-    `);
-
-    images.forEach((image, index) => {
-      insert.run({
+  const statements = [
+    { sql: "DELETE FROM gallery_images", args: [] as unknown[] },
+    ...images.map((image, index) => ({
+      sql: `
+        INSERT INTO gallery_images (src, alt, orientation, sort_order)
+        VALUES (@src, @alt, @orientation, @sortOrder)
+      `,
+      args: {
         src: image.src,
         alt: image.alt,
         orientation: image.orientation,
         sortOrder: index,
-      });
-    });
-  });
+      },
+    })),
+  ];
 
-  replace();
+  await db.batch(statements as any, "write");
   return getGalleryImages();
+}
+
+// Database functions
+
+
+export async function getSigner() {
+  return new Signer({
+    hostname: getEnvVar("PGHOST"),
+    port: Number(getEnvVar("PGPORT")),
+    username: getEnvVar("PGUSER"),
+    region: getEnvVar("AWS_REGION"),
+    credentials: awsCredentialsProvider({
+      roleArn: getEnvVar("AWS_ROLE_ARN"),
+      clientConfig: { region: getEnvVar("AWS_REGION") },
+    }),
+  });
+}
+
+export async function getDatabasePool() {
+  if (pool) return pool;
+
+  const signer = await getSigner();
+  pool = new Pool({
+    host: getEnvVar("PGHOST"),
+    user: getEnvVar("PGUSER"),
+    database: process.env.PGDATABASE || "postgres",
+    // The auth token value can be cached for up to 15 minutes (900 seconds) if desired.
+    password: () => signer.getAuthToken(),
+    port: Number(getEnvVar("PGPORT")),
+    // Recommended to switch to `true` in production.
+    // See https://docs.aws.amazon.com/lambda/latest/dg/services-rds.html#rds-lambda-certificates
+    ssl: { rejectUnauthorized: false },
+    max: 20,
+  });
+  attachDatabasePool(pool);
+  return pool;
+}
+
+
+// Single query transaction.
+export async function query(sql: string, args: unknown[]) {
+  const db = await getDatabasePool();
+  return db.query(sql, args);
+}
+
+// Use it for multiple queries transaction.
+export async function withConnection<T>(
+  fn: (client: ClientBase) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
 }

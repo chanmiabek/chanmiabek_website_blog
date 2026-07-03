@@ -7,8 +7,8 @@ interface ProjectsProps {
   exclude?: string[];
 }
 
-export function Projects({ range, exclude }: ProjectsProps) {
-  let allProjects = getPosts(["src", "app", "work", "projects"]);
+export async function Projects({ range, exclude }: ProjectsProps) {
+  let allProjects = await getPosts(["src", "app", "work", "projects"]);
 
   // Exclude by slug (exact match)
   if (exclude && exclude.length > 0) {

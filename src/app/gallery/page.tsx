@@ -15,8 +15,8 @@ export async function generateMetadata() {
   });
 }
 
-export default function Gallery() {
-  const images = getGalleryImages();
+export default async function Gallery() {
+  const images = await getGalleryImages();
 
   return (
     <Flex maxWidth="l">

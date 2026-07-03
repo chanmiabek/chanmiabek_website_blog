@@ -84,7 +84,7 @@ function buildData(payload: ContentPayload): ContentMetadata {
   };
 }
 
-function writeEntry(payload: ContentPayload, mode: "create" | "update") {
+async function writeEntry(payload: ContentPayload, mode: "create" | "update") {
   assertContentType(payload.type);
 
   const slug = slugify(payload.slug || payload.title || "");
@@ -99,7 +99,7 @@ function writeEntry(payload: ContentPayload, mode: "create" | "update") {
 
   const body = payload.content?.trim() || "Write your content here.";
   const metadata = buildData({ ...payload, slug });
-  const entry = saveContentEntry(payload.type, slug, originalSlug, metadata, body, mode);
+  const entry = await saveContentEntry(payload.type, slug, originalSlug, metadata, body, mode);
 
   if (!entry) {
     throw new Error("Unable to save content");
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     const type = request.nextUrl.searchParams.get("type");
     assertContentType(type);
 
-    return NextResponse.json({ entries: getContentEntries(type) });
+    return NextResponse.json({ entries: await getContentEntries(type) });
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Unable to load content" },
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const payload = (await request.json()) as ContentPayload;
-    const entry = writeEntry(payload, "create");
+    const entry = await writeEntry(payload, "create");
 
     return NextResponse.json({ entry }, { status: 201 });
   } catch (error) {
@@ -151,7 +151,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     const payload = (await request.json()) as ContentPayload;
-    const entry = writeEntry(payload, "update");
+    const entry = await writeEntry(payload, "update");
 
     return NextResponse.json({ entry });
   } catch (error) {

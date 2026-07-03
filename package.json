@@ -1,9 +1,9 @@
 {
-  "name": "@once-ui-system/magic-portfolio",
+  "name": "chanmiabek-portfolio",
   "version": "2.3.0",
   "private": true,
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -15,16 +15,20 @@
     "lint": "biome lint src next.config.mjs"
   },
   "dependencies": {
+    "@aws-sdk/rds-signer": "^3.1079.0",
+    "@libsql/client": "^0.15.15",
     "@mdx-js/loader": "^3.1.0",
     "@next/mdx": "^16.0.10",
     "@once-ui-system/core": "latest",
-    "better-sqlite3": "^12.11.1",
+    "@vercel/blob": "^1.1.1",
+    "@vercel/functions": "^3.7.5",
     "classnames": "^2.5.1",
     "cookie": "^1.0.2",
     "gray-matter": "^4.0.3",
     "lint-staged": "^16.1.5",
     "next": "^16.0.10",
     "next-mdx-remote": "^6.0.0",
+    "pg": "^8.22.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.3",
     "react-icons": "^5.5.0",
@@ -33,7 +37,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/cookie": "^0.6.0",
     "@types/node": "^20.17.30",
     "@types/react": "^19.2.4",

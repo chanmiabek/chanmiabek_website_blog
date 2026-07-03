@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
+import { put } from "@vercel/blob";
 import * as cookie from "cookie";
 import { getUploadDirectory, getUploadPublicPath } from "@/lib/server-paths";
 
@@ -49,10 +50,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "No image files were uploaded" }, { status: 400 });
   }
 
-  const uploadDir = getUploadDirectory();
-  fs.mkdirSync(uploadDir, { recursive: true });
-
   const uploaded: string[] = [];
+  const useBlobStorage = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const uploadDir = useBlobStorage ? "" : getUploadDirectory();
+
+  if (!useBlobStorage) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
 
   for (const file of files) {
     if (!allowedTypes.has(file.type)) {
@@ -65,10 +69,18 @@ export async function POST(request: NextRequest) {
     const bytes = Buffer.from(await file.arrayBuffer());
     const baseName = slugify(path.basename(file.name, path.extname(file.name))) || "image";
     const fileName = `${Date.now()}-${baseName}${getExtension(file)}`;
-    const filePath = path.join(uploadDir, fileName);
 
-    fs.writeFileSync(filePath, bytes);
-    uploaded.push(getUploadPublicPath(fileName));
+    if (useBlobStorage) {
+      const blob = await put(`uploads/${fileName}`, bytes, {
+        access: "public",
+        contentType: file.type,
+      });
+      uploaded.push(blob.url);
+    } else {
+      const filePath = path.join(uploadDir, fileName);
+      fs.writeFileSync(filePath, bytes);
+      uploaded.push(getUploadPublicPath(fileName));
+    }
   }
 
   return NextResponse.json({ uploaded });
