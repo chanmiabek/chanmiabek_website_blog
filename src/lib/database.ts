@@ -536,7 +536,8 @@ export async function query(sql: string, args: unknown[]) {
 export async function withConnection<T>(
   fn: (client: ClientBase) => Promise<T>,
 ): Promise<T> {
-  const client = await pool.connect();
+  const db = await getDatabasePool();
+  const client = await db.connect();
   try {
     return await fn(client);
   } finally {
